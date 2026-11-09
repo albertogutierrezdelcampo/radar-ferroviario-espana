@@ -1,0 +1,45 @@
+# Credenciales y configuración local
+.env
+.env.*
+!.env.example
+cache/operators/operator_config.json
+
+# Datos descargados y cachés
+cache/operators/*.zip
+cache/
+!cache/.gitkeep
+real_tracks_cache*.json
+overpass_viewport_cache*.json
+*.cache
+.cache/
+
+# Registros
+logs/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Entornos virtuales
+.venv/
+venv/
+env/
+
+# Editores y sistema
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# Temporales
+*.tmp
+*.bak
+*.swp
+*.swo
