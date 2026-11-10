@@ -63,3 +63,15 @@ variable "budget_email" {
   type        = string
   sensitive   = true
 }
+
+variable "github_owner_id" {
+  description = "Immutable GitHub owner identifier used in OIDC subjects."
+  type        = string
+  default     = "131655812"
+}
+
+variable "github_repository_id" {
+  description = "Immutable GitHub repository identifier used in OIDC subjects."
+  type        = string
+  default     = "1451564172"
+}
