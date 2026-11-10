@@ -43,3 +43,22 @@ Thumbs.db
 *.bak
 *.swp
 *.swo
+
+# Secretos y configuración local
+.env
+.env.*
+cache/operators/operator_config.json
+
+# Datos descargados y cachés
+cache/operators/*.zip
+real_tracks_cache_*.json
+overpass_viewport_cache_*.json
+
+# Registros
+logs/
+*.log
+
+# Entorno local
+.venv/
+__pycache__/
+*.py[cod]
