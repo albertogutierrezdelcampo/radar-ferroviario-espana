@@ -22,7 +22,7 @@ jobs:
 
     steps:
       - name: Checkout tagged commit
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Validate production tag
         shell: bash
