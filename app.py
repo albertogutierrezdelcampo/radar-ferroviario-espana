@@ -260,10 +260,11 @@ STATIC_CACHE = {
 }
 
 RT_CACHE = {
-    "timestamp": 0,
-    "trains": [],
-    "diagnostics": {}
+    "timestamp": 0, "trains": [], "diagnostics": {},
+    "last_success_at": 0, "last_attempt_at": 0,
+    "last_error": None, "discarded_vehicles": 0
 }
+TRAIN_REFRESH_LOCK = threading.Lock()
 
 ALERTS_CACHE = {
     "timestamp": 0,
@@ -1677,6 +1678,22 @@ def geolocate_alert(informed_entities, title, description):
     return 40.4350, -3.6900, "Aviso General Red Renfe / ADIF"
 
 
+@app.route("/health/live")
+def health_live():
+    return jsonify({"status": "ok", "service": "radar-ferroviario"}), 200
+
+
+@app.route("/health/ready")
+def health_ready():
+    trains = RT_CACHE.get("trains") or []
+    last_success = float(RT_CACHE.get("last_success_at") or RT_CACHE.get("timestamp") or 0)
+    age = max(0, int(time.time() - last_success)) if last_success else None
+    ready = bool(trains) and age is not None and age <= 900
+    payload = {"status": "ready" if ready else "degraded", "trains": len(trains),
+               "snapshot_age_seconds": age, "last_error": RT_CACHE.get("last_error")}
+    return jsonify(payload), 200 if ready else 503
+
+
 @app.route("/")
 def index():
     ensure_background_threads()
@@ -1767,6 +1784,29 @@ def build_train_stops(trip_id, train_num, current_stop_id="", realtime_delays=No
 
 @app.route("/api/trains")
 def api_trains():
+    """Renfe core endpoint, isolated from every optional worker and feed."""
+    started = time.time()
+    RT_CACHE["last_attempt_at"] = started
+    acquired = TRAIN_REFRESH_LOCK.acquire(timeout=10)
+    if not acquired:
+        age = max(0, int(started - (RT_CACHE.get("last_success_at") or RT_CACHE.get("timestamp") or started)))
+        return jsonify({"success": True, "trains": RT_CACHE.get("trains") or [],
+                        "diagnostics": RT_CACHE.get("diagnostics") or {}, "cached": True,
+                        "stale": True, "age_seconds": age, "warning": "refresh_in_progress"})
+    try:
+        return _refresh_trains_impl()
+    except Exception as exc:
+        RT_CACHE["last_error"] = f"{type(exc).__name__}: {exc}"
+        log_exception("api_trains isolated refresh", exc)
+        age = max(0, int(time.time() - (RT_CACHE.get("last_success_at") or RT_CACHE.get("timestamp") or time.time())))
+        return jsonify({"success": True, "trains": RT_CACHE.get("trains") or [],
+                        "diagnostics": RT_CACHE.get("diagnostics") or {}, "cached": True,
+                        "stale": True, "age_seconds": age, "warning": "refresh_failed",
+                        "error_type": type(exc).__name__})
+    finally:
+        TRAIN_REFRESH_LOCK.release()
+
+def _refresh_trains_impl():
     now = time.time()
     snap_enabled = request.args.get("snap", "1") == "1"
 
@@ -1778,7 +1818,6 @@ def api_trains():
                     train["stops"] = build_train_stops(train.get("trip_id", ""), extract_train_number(f"{train.get('id','')} {train.get('label','')}"), "", {})
         return jsonify({"success": True, "trains": cached_trains, "diagnostics": RT_CACHE["diagnostics"], "static_gtfs_ready": STATIC_CACHE.get("stations_loaded", False)})
 
-    ensure_background_threads()
 
     trains = []
     seen_train_nums = set()
@@ -1787,8 +1826,15 @@ def api_trains():
     # 1. CERCANÍAS (GTFS-RT Posiciones en Tiempo Real)
     cerc_entities, cerc_hdr_ts, cerc_url, cerc_err = fetch_json_entities("cercanias_pos")
     cerc_count = 0
+    discarded_vehicles = 0
     for ent in cerc_entities:
+        if not isinstance(ent, dict):
+            discarded_vehicles += 1
+            continue
         veh = ent.get("vehicle") or ent
+        if not isinstance(veh, dict):
+            discarded_vehicles += 1
+            continue
         pos = veh.get("position") or {}
         lat = parse_float(pos.get("latitude") or pos.get("lat"))
         lon = parse_float(pos.get("longitude") or pos.get("lon"))
@@ -1887,7 +1933,13 @@ def api_trains():
     ld_counts = {"AVE": 0, "Larga Distancia": 0, "Media Distancia": 0}
 
     for ent in ld_entities:
+        if not isinstance(ent, dict):
+            discarded_vehicles += 1
+            continue
         veh = ent.get("vehicle") or ent
+        if not isinstance(veh, dict):
+            discarded_vehicles += 1
+            continue
         pos = veh.get("position") or {}
         lat = parse_float(pos.get("latitude") or pos.get("lat"))
         lon = parse_float(pos.get("longitude") or pos.get("lon"))
@@ -2003,15 +2055,26 @@ def api_trains():
         "error": ld_err
     }
 
+    RT_CACHE["last_attempt_at"] = now
+    RT_CACHE["discarded_vehicles"] = discarded_vehicles
+    diagnostics["snapshot"] = {"source": "live" if trains else "empty", "generated_at": now,
+                               "discarded_vehicles": discarded_vehicles}
+    if not trains and RT_CACHE.get("trains"):
+        age = max(0, int(now - (RT_CACHE.get("last_success_at") or RT_CACHE.get("timestamp") or now)))
+        stale_diag = dict(RT_CACHE.get("diagnostics") or {})
+        stale_diag["snapshot"] = {"source": "last_valid_cache", "stale": True,
+                                  "age_seconds": age, "refresh_diagnostics": diagnostics,
+                                  "discarded_vehicles": discarded_vehicles}
+        return jsonify({"success": True, "trains": RT_CACHE["trains"], "diagnostics": stale_diag,
+                        "cached": True, "stale": True, "age_seconds": age})
     RT_CACHE["timestamp"] = now
     RT_CACHE["trains"] = trains
     RT_CACHE["diagnostics"] = diagnostics
-
-    return jsonify({
-        "success": True,
-        "trains": trains,
-        "diagnostics": diagnostics
-    })
+    if trains:
+        RT_CACHE["last_success_at"] = now
+        RT_CACHE["last_error"] = None
+    return jsonify({"success": True, "trains": trains, "diagnostics": diagnostics,
+                    "cached": False, "stale": False})
 
 
 @app.route("/api/alerts")
@@ -2265,6 +2328,10 @@ def api_diagnostics():
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "uptime": round(time.time() - APP_START_TIME),
             "feeds": RT_CACHE.get("diagnostics", {}),
+            "train_snapshot": {"last_success_at": RT_CACHE.get("last_success_at", 0),
+                               "last_attempt_at": RT_CACHE.get("last_attempt_at", 0),
+                               "last_error": RT_CACHE.get("last_error"),
+                               "discarded_vehicles": RT_CACHE.get("discarded_vehicles", 0)},
             "counts": {
                 "trains": len(RT_CACHE.get("trains", [])),
                 "stations": len(STATIC_CACHE.get("stations", [])),
