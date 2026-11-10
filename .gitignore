@@ -1,7 +1,141 @@
+# -----------------------------------------------------------------------------
+# Radar Ferroviario Espana - Git ignore rules
+# -----------------------------------------------------------------------------
+
+# Python bytecode and caches
+__pycache__/
+*.py[cod]
+*$py.class
+.pytest_cache/
+.mypy_cache/
+.pyright/
+.ruff_cache/
+.hypothesis/
+.tox/
+.nox/
+
+# Coverage and test reports
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+.pytest-results/
+test-results/
+junit.xml
+
+# Virtual environments
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Local environment variables and secrets
 .env
 .env.*
 !.env.example
-.pytest_cache/
-coverage.xml
-htmlcov/
+*.pem
+*.key
+*.crt
+secrets/
+
+# Runtime logs and process files
+logs/
+*.log
+*.log.*
+*.pid
+*.pid.lock
+*.sock
+
+# Downloaded/generated operator data
+cache/
+!cache/.gitkeep
+
+# Local application data
+instance/
+*.sqlite
+*.sqlite3
+*.db
+
+# Build and packaging artifacts
+build/
+dist/
+downloads/
+*.egg-info/
+.eggs/
+*.egg
+wheels/
+pip-wheel-metadata/
+
+# Archives and temporary exports
 *.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Temporary and backup files
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.rej
+*~
+.tmp/
+tmp/
+
+# IDEs and editors
+.vscode/
+.idea/
+*.code-workspace
+*.swp
+*.swo
+.project
+.pydevproject
+.settings/
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Docker local overrides and generated volumes
+docker-compose.override.yml
+.docker/
+docker-data/
+volumes/
+
+# Local deployment/platform files
+.vercel/
+.netlify/
+.serverless/
+.aws-sam/
+
+# Profiling and debug artifacts
+*.prof
+*.lprof
+*.trace
+flamegraph.svg
+
+# Keep project sources and examples explicitly trackable
+!Dockerfile
+!docker-compose.yml
+!requirements.txt
+!pytest.ini
+!radar/
+!radar/**
+!scripts/
+!scripts/**
+!static/
+!static/**
+!templates/
+!templates/**
+!tests/
+!tests/**
+!*.md
