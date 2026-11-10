@@ -1,0 +1,15 @@
+services:
+  radar:
+    build: .
+    ports:
+      - "8080:8080"
+    environment:
+      APP_ENV: dev
+      LOG_LEVEL: INFO
+    volumes:
+      - radar-cache:/app/cache
+      - radar-logs:/app/logs
+    restart: unless-stopped
+volumes:
+  radar-cache:
+  radar-logs:
