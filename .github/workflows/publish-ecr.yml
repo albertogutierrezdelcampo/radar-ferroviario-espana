@@ -1,4 +1,4 @@
-name: Publish production image to ECR
+name: Publish production image to ECR and deploy to ECS
 
 "on":
   push:
@@ -10,15 +10,15 @@ permissions:
   id-token: write
 
 concurrency:
-  group: publish-ecr-${{ github.ref }}
+  group: production-deployment-${{ github.ref }}
   cancel-in-progress: false
 
 jobs:
-  publish:
+  publish-and-deploy:
     if: github.ref_type == 'tag' && startsWith(github.ref_name, 'v')
-    name: Build, verify and publish
+    name: Build, publish and deploy
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
 
     steps:
       - name: Checkout tagged commit
@@ -47,12 +47,13 @@ jobs:
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
-          role-session-name: radar-ecr-${{ github.run_id }}
+          role-session-name: radar-deploy-${{ github.run_id }}
 
       - name: Confirm AWS identity
         shell: bash
         run: |
           set -euo pipefail
+
           aws sts get-caller-identity
 
       - name: Login to Amazon ECR
@@ -181,13 +182,13 @@ jobs:
             --filter name=radar-release \
             --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}'
 
-      - name: Validate health endpoint
+      - name: Validate local health endpoint
         shell: bash
         run: |
           set -euo pipefail
 
           for attempt in $(seq 1 36); do
-            echo "Health-check attempt ${attempt}/36"
+            echo "Local health-check attempt ${attempt}/36"
 
             container_running="$(
               docker inspect radar-release \
@@ -206,10 +207,10 @@ jobs:
               --silent \
               --show-error \
               http://127.0.0.1:8080/health/live \
-              > /tmp/health.json; then
+              > /tmp/local-health.json; then
 
-              echo "Health response:"
-              cat /tmp/health.json
+              echo "Local health response:"
+              cat /tmp/local-health.json
               echo
               echo "Release candidate is healthy"
               exit 0
@@ -218,7 +219,7 @@ jobs:
             sleep 5
           done
 
-          echo "::error::Health endpoint did not respond after 180 seconds"
+          echo "::error::Local health endpoint did not respond after 180 seconds"
           docker ps -a
           docker logs radar-release
           exit 1
@@ -253,13 +254,239 @@ jobs:
             echo "- Repository: \`$ECR_REPOSITORY\`"
           } >> "$GITHUB_STEP_SUMMARY"
 
-      - name: Show container logs
+      - name: Resolve published image digest
+        id: image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          digest="$(
+            aws ecr describe-images \
+              --region "$AWS_REGION" \
+              --repository-name "$ECR_REPOSITORY" \
+              --image-ids "imageTag=$RELEASE_TAG" \
+              --query 'imageDetails[0].imageDigest' \
+              --output text
+          )"
+
+          if [[ -z "$digest" || "$digest" == "None" ]]; then
+            echo "::error::Could not resolve ECR digest for $RELEASE_TAG"
+            exit 1
+          fi
+
+          image_uri="${ECR_REGISTRY}/${ECR_REPOSITORY}@${digest}"
+
+          echo "digest=$digest" >> "$GITHUB_OUTPUT"
+          echo "uri=$image_uri" >> "$GITHUB_OUTPUT"
+
+          echo "Published digest: $digest"
+          echo "Deployable image: $image_uri"
+
+      - name: Capture current ECS production image
+        id: previous
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECS_SERVICE_ARN: ${{ vars.ECS_SERVICE_ARN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          previous_image="$(
+            aws ecs describe-express-gateway-service \
+              --region "$AWS_REGION" \
+              --service-arn "$ECS_SERVICE_ARN" \
+              --query 'service.activeConfigurations[0].primaryContainer.image' \
+              --output text
+          )"
+
+          if [[ -z "$previous_image" || "$previous_image" == "None" ]]; then
+            echo "::error::Could not resolve current ECS production image"
+            exit 1
+          fi
+
+          echo "image=$previous_image" >> "$GITHUB_OUTPUT"
+          echo "Current production image: $previous_image"
+
+      - name: Deploy immutable image to ECS Express Mode
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECS_SERVICE_ARN: ${{ vars.ECS_SERVICE_ARN }}
+          ECS_EXECUTION_ROLE_ARN: ${{ vars.ECS_EXECUTION_ROLE_ARN }}
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws ecs update-express-gateway-service \
+            --region "$AWS_REGION" \
+            --service-arn "$ECS_SERVICE_ARN" \
+            --execution-role-arn "$ECS_EXECUTION_ROLE_ARN" \
+            --primary-container "{\"image\":\"${IMAGE_URI}\",\"containerPort\":8080}" \
+            --health-check-path "/health/live" \
+            --output json \
+            > /tmp/ecs-update.json
+
+          echo "ECS update response:"
+          python -m json.tool /tmp/ecs-update.json
+
+      - name: Monitor ECS canary deployment and automatic rollback
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECS_SERVICE_ARN: ${{ vars.ECS_SERVICE_ARN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aws ecs monitor-express-gateway-service \
+            --region "$AWS_REGION" \
+            --service-arn "$ECS_SERVICE_ARN"
+
+      - name: Validate public production endpoints
+        env:
+          APP_HOST: ${{ vars.APP_HOST }}
+          EXPECTED_IMAGE: ${{ steps.image.outputs.uri }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECS_SERVICE_ARN: ${{ vars.ECS_SERVICE_ARN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          app_url="$(printf '%s%s' 'https://' "$APP_HOST")"
+
+          echo "Production endpoint: $app_url"
+
+          for path in \
+            "/health/live" \
+            "/" \
+            "/api/diagnostics" \
+            "/api/transit-networks" \
+            "/api/trains"
+          do
+            echo "Validating ${app_url}${path}"
+
+            status_code="$(
+              curl \
+                --silent \
+                --show-error \
+                --retry 6 \
+                --retry-all-errors \
+                --retry-delay 10 \
+                --connect-timeout 10 \
+                --max-time 90 \
+                --output /dev/null \
+                --write-out '%{http_code}' \
+                "${app_url}${path}"
+            )"
+
+            if [[ "$status_code" != "200" ]]; then
+              echo "::error::Unexpected HTTP status for ${path}: ${status_code}"
+              exit 1
+            fi
+
+            printf '%-30s %s\n' "$path" "$status_code"
+          done
+
+          deployed_image="$(
+            aws ecs describe-express-gateway-service \
+              --region "$AWS_REGION" \
+              --service-arn "$ECS_SERVICE_ARN" \
+              --query 'service.activeConfigurations[0].primaryContainer.image' \
+              --output text
+          )"
+
+          if [[ "$deployed_image" != "$EXPECTED_IMAGE" ]]; then
+            echo "::error::ECS active image does not match published digest"
+            echo "Expected: $EXPECTED_IMAGE"
+            echo "Actual:   $deployed_image"
+            exit 1
+          fi
+
+          echo "Production deployment verified: $deployed_image"
+
+      - name: Check ECS service status
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECS_SERVICE_ARN: ${{ vars.ECS_SERVICE_ARN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          status="$(
+            aws ecs describe-express-gateway-service \
+              --region "$AWS_REGION" \
+              --service-arn "$ECS_SERVICE_ARN" \
+              --query 'service.status.statusCode' \
+              --output text
+          )"
+
+          echo "ECS Express Mode status: $status"
+
+          if [[ "$status" != "ACTIVE" ]]; then
+            echo "::error::ECS Express Mode service is not ACTIVE"
+            exit 1
+          fi
+
+      - name: Write deployment summary
+        if: success()
+        env:
+          RELEASE_TAG: ${{ github.ref_name }}
+          IMAGE_URI: ${{ steps.image.outputs.uri }}
+          IMAGE_DIGEST: ${{ steps.image.outputs.digest }}
+          PREVIOUS_IMAGE: ${{ steps.previous.outputs.image }}
+          APP_HOST: ${{ vars.APP_HOST }}
+          ECS_SERVICE_ARN: ${{ vars.ECS_SERVICE_ARN }}
+        shell: bash
+        run: |
+          {
+            echo "## ECS production deployment"
+            echo
+            echo "- Version: \`$RELEASE_TAG\`"
+            echo "- Image: \`$IMAGE_URI\`"
+            echo "- Digest: \`$IMAGE_DIGEST\`"
+            echo "- Previous image: \`$PREVIOUS_IMAGE\`"
+            echo "- ECS service: \`$ECS_SERVICE_ARN\`"
+            echo "- Endpoint: \`https://$APP_HOST\`"
+            echo "- Local container health check: passed"
+            echo "- ECS canary deployment: completed"
+            echo "- Public smoke tests: passed"
+            echo "- Active digest verification: passed"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Capture ECS state after failure
+        if: failure()
+        env:
+          AWS_REGION: ${{ vars.AWS_REGION }}
+          ECS_SERVICE_ARN: ${{ vars.ECS_SERVICE_ARN }}
+          EXPECTED_IMAGE: ${{ steps.image.outputs.uri }}
+          PREVIOUS_IMAGE: ${{ steps.previous.outputs.image }}
+        shell: bash
+        run: |
+          echo "Expected new image: ${EXPECTED_IMAGE:-not-resolved}"
+          echo "Previous image: ${PREVIOUS_IMAGE:-not-resolved}"
+
+          aws ecs describe-express-gateway-service \
+            --region "$AWS_REGION" \
+            --service-arn "$ECS_SERVICE_ARN" \
+            --output json \
+            > /tmp/ecs-failure-state.json \
+            || true
+
+          if [[ -s /tmp/ecs-failure-state.json ]]; then
+            python -m json.tool /tmp/ecs-failure-state.json || true
+          fi
+
+      - name: Show local container logs
         if: always()
         shell: bash
         run: |
           docker logs radar-release || true
 
-      - name: Show container state
+      - name: Show local container state
         if: always()
         shell: bash
         run: |
@@ -268,7 +495,7 @@ jobs:
             --format 'table {{.Names}}\t{{.Status}}\t{{.Ports}}' \
             || true
 
-      - name: Remove release candidate
+      - name: Remove local release candidate
         if: always()
         shell: bash
         run: |
