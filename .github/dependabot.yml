@@ -10,3 +10,15 @@ updates:
     schedule:
       interval: weekly
     target-branch: dev
+  - package-ecosystem: "terraform"
+    directory: "/infra/bootstrap"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev"
+    open-pull-requests-limit: 5
+  - package-ecosystem: "terraform"
+    directory: "/infra/production"
+    schedule:
+      interval: "weekly"
+    target-branch: "dev"
+    open-pull-requests-limit: 5
