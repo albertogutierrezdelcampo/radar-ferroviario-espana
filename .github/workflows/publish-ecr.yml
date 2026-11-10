@@ -1,76 +1,82 @@
 name: Publish production image to ECR
 
-on:
+"on":
   push:
     tags:
       - "v*.*.*"
+  workflow_dispatch:
 
 permissions:
   contents: read
- *id-token: write
+  id-token: write
 
 concurrency:
-  gr*up: publish-ecr-${{ github.ref }}
-* cancel-in-progress: false
+  group: publish-ecr-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-* publish:
-    name: Build, verify *nd publish
-    runs-on: ubuntu-lat*st
+  publish:
+    name: Build, verify and publish
+    runs-on: ubuntu-latest
     timeout-minutes: 30
 
-    st*ps:
-      - name: Checkout tagged *ommit
-        uses: actions/checko*t@v4
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
 
-      - name: Validate produ*tion tag
+      - name: Validate production tag
+        if: github.event_name == 'push'
         shell: bash
-     *  run: |
-          set -euo pipefa*l
+        run: |
+          set -euo pipefail
           [[ "$GITHUB_REF_TYPE" == "tag" ]]
           [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
-          echo "Publishing im*utable tag $GITHUB_REF_NAME"
+          echo "Publishing $GITHUB_REF_NAME"
 
-    * - name: Configure AWS credentials*through OIDC
-        uses: aws-act*ons/configure-aws-credentials@v5
- *      with:
-          role-to-assu*e: ${{ vars.AWS_ROLE_ARN }}
-      *   aws-region: ${{ vars.AWS_REGION*}}
-          role-session-name: ra*ar-ecr-${{ github.run_id }}
-
-     *- name: Confirm AWS identity
-     *  run: aws sts get-caller-identity*
-      - name: Login to Amazon ECR*        id: ecr
-        uses: aws-*ctions/amazon-ecr-login@v2
-
-      * name: Set up Docker Buildx
-      * uses: docker/setup-buildx-action@*3
-
-      - name: Build production *mage
-        uses: docker/build-pu*h-action@v6
+      - name: Configure AWS credentials through OIDC
+        uses: aws-actions/configure-aws-credentials@v5
         with:
-        * context: .
-          file: ./Dock*rfile
-          platforms: linux/a*d64
-          load: true
-         *push: false
-          tags: radar-*erroviario:release
-          cache*from: type=gha
-          cache-to:*type=gha,mode=max
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+          role-session-name: radar-ecr-${{ github.run_id }}
 
-      - name: V*rify application files
-        run* |
+      - name: Confirm AWS identity
+        run: aws sts get-caller-identity
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build production image
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Dockerfile
+          platforms: linux/amd64
+          load: true
+          push: false
+          tags: radar-ferroviario:release
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify application files
+        shell: bash
+        run: |
+          set -euo pipefail
           docker run --rm \
-   *        --entrypoint /bin/sh \
-   *        radar-ferroviario:release *
+            --entrypoint /bin/sh \
+            radar-ferroviario:release \
             -c '
-              se* -eu
-              test -f /app/ap*.py
-              test -f /app/wsg*.py
-              test -f /app/src*radar_app/application.py
-         *    test -d /app/static
-          *   test -d /app/templates
-        *     echo "Production image contents verified"
+              set -eu
+              test -f /app/app.py
+              test -f /app/wsgi.py
+              test -f /app/src/radar_app/application.py
+              test -d /app/static
+              test -d /app/templates
+              echo "Production image contents verified"
             '
 
       - name: Start release candidate
@@ -113,24 +119,35 @@ jobs:
           docker logs radar-release
           exit 1
 
+      - name: Resolve release tag
+        id: release
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$GITHUB_REF_TYPE" == "tag" ]]; then
+            release_tag="$GITHUB_REF_NAME"
+          else
+            release_tag="manual-${GITHUB_RUN_ID}"
+          fi
+
+          echo "tag=$release_tag" >> "$GITHUB_OUTPUT"
+
       - name: Tag and publish immutable image
         env:
           ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
-          RELEASE_TAG: ${{ github.ref_name }}
+          RELEASE_TAG: ${{ steps.release.outputs.tag }}
+        shell: bash
         run: |
           set -euo pipefail
 
-          REMOTE_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${RELEASE_TAG}"
+          remote_image="${ECR_REGISTRY}/${ECR_REPOSITORY}:${RELEASE_TAG}"
 
-          docker tag radar-ferroviario:release "$REMOTE_IMAGE"
-          docker push "$REMOTE_IMAGE"
+          docker tag radar-ferroviario:release "$remote_image"
+          docker push "$remote_image"
 
-          {
-            echo "## Published image"
-            echo
-            echo "\`$REMOTE_IMAGE\`"
-          } >> "$GITHUB_STEP_SUMMARY"
+          echo "Published image: $remote_image" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Show container logs
         if: always()
