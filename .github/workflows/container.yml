@@ -49,6 +49,21 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
+      - name: Verify application files in image
+        run: |
+          docker run --rm \
+            --entrypoint /bin/sh \
+            radar-ferroviario:test \
+            -c '
+              set -eu
+              test -f /app/app.py
+              test -f /app/wsgi.py
+              test -f /app/src/radar_app/application.py
+              test -d /app/templates
+              test -d /app/static
+              echo "Container application files verified"
+            '
+
       - name: Start container
         run: |
           docker run -d \
@@ -60,15 +75,31 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
+
           for attempt in $(seq 1 36); do
+            echo "Health-check attempt ${attempt}/36"
+
+            if ! docker inspect radar-test \
+              --format='{{.State.Running}}' | grep -qx true; then
+              echo "Container stopped before becoming healthy"
+              docker ps -a
+              docker logs radar-test
+              exit 1
+            fi
+
             if curl --fail --silent \
-              http://127.0.0.1:8080/health/live > /tmp/health.json; then
+              http://127.0.0.1:8080/health/live \
+              > /tmp/health.json; then
               cat /tmp/health.json
+              echo
+              echo "Container health endpoint verified"
               exit 0
             fi
+
             sleep 5
           done
 
+          echo "Health endpoint did not become ready after 180 seconds"
           docker ps -a
           docker logs radar-test
           exit 1
