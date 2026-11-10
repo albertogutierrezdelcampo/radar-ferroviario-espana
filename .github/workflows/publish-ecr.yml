@@ -43,7 +43,7 @@ jobs:
           echo "Publishing immutable production tag: $GITHUB_REF_NAME"
 
       - name: Configure AWS credentials through OIDC
-        uses: aws-actions/configure-aws-credentials@v5
+        uses: aws-actions/configure-aws-credentials@v6
         with:
           role-to-assume: ${{ vars.AWS_ROLE_ARN }}
           aws-region: ${{ vars.AWS_REGION }}
