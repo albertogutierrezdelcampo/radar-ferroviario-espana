@@ -78,8 +78,14 @@ data "aws_iam_policy_document" "github_ecs" {
 
     actions = [
       "ecs:DescribeExpressGatewayService",
-      "ecs:UpdateExpressGatewayService",
-      "ecs:MonitorExpressGatewayService"
+      "ecs:DescribeServiceDeployments",
+      "ecs:DescribeServiceRevisions",
+      "ecs:DescribeServices",
+      "ecs:DescribeTaskDefinition",
+      "ecs:ListServiceDeployments",
+      "ecs:MonitorExpressGatewayService",
+      "ecs:RegisterTaskDefinition",
+      "ecs:UpdateExpressGatewayService"
     ]
 
     resources = ["*"]
