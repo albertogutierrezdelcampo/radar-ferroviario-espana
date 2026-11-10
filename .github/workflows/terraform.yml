@@ -1,0 +1,74 @@
+name: Terraform
+
+"on":
+  pull_request:
+    branches:
+      - dev
+    paths:
+      - "infra/**"
+      - ".github/workflows/terraform.yml"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: terraform-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  validate:
+    name: Validate production IaC
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Terraform
+        uses: hashicorp/setup-terraform@v3
+        with:
+          terraform_version: "1.9.8"
+          terraform_wrapper: false
+
+      - name: Terraform bootstrap format check
+        run: |
+          terraform \
+            -chdir=infra/bootstrap \
+            fmt \
+            -check \
+            -recursive
+
+      - name: Terraform bootstrap initialization
+        run: |
+          terraform \
+            -chdir=infra/bootstrap \
+            init \
+            -backend=false
+
+      - name: Terraform bootstrap validation
+        run: |
+          terraform \
+            -chdir=infra/bootstrap \
+            validate
+
+      - name: Terraform production format check
+        run: |
+          terraform \
+            -chdir=infra/production \
+            fmt \
+            -check \
+            -recursive
+
+      - name: Terraform production initialization
+        run: |
+          terraform \
+            -chdir=infra/production \
+            init \
+            -backend=false
+
+      - name: Terraform production validation
+        run: |
+          terraform \
+            -chdir=infra/production \
+            validate

@@ -164,3 +164,37 @@ pnpm-debug.log*
 # Do NOT add broad negation rules such as !tests/** or !src/** here.
 # Ignored directories cannot be reliably re-included without unignoring every
 # parent, and project source files are not ignored by any rule above anyway.
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+.terraform.lock.hcl.backup
+crash.log
+crash.*.log
+
+# Terraform
+**/.terraform/*
+*.tfstate
+*.tfstate.*
+*.tfvars
+!*.tfvars.example
+override.tf
+override.tf.json
+*_override.tf
+*_override.tf.json
+.terraformrc
+terraform.rc
+.terraform.lock.hcl.backup
+crash.log
+crash.*.log
+tfplan
+tfplan.*
+
+# Terraform saved plans
+*.tfplan
+**/*.tfplan
+tfplan
+**/tfplan
