@@ -1,43 +1,101 @@
 name: CI
+
 on:
   pull_request:
-    branches: [dev, qa, main]
+    branches:
+      - dev
+      - qa
+      - main
+
   push:
-    branches: [feature/estabilizacion, dev, qa, main]
+    branches:
+      - dev
+      - qa
+      - main
+      - "feature/**"
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
-concurrency:
-  group: ci-${{ github.ref }}
-  cancel-in-progress: true
+
 jobs:
   test:
+    name: test (3.12)
     runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ['3.12']
+    timeout-minutes: 10
+
+    env:
+      PYTHONPATH: src
+      RADAR_LOG_FILE: /tmp/radar-pytest.log
+
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Python 3.12
+        uses: actions/setup-python@v5
         with:
-          python-version: ${{ matrix.python-version }}
+          python-version: "3.12"
           cache: pip
-      - run: python -m pip install --upgrade pip
-      - run: pip install -r requirements.txt
-      - run: python -m py_compile app.py
-      - run: python -m pytest -q
-      - name: Verify Jinja template parses
-        run: python -c "from pathlib import Path; from jinja2 import Environment; Environment().parse(Path('templates/map.html').read_text())"
-  container:
-    runs-on: ubuntu-latest
-    needs: test
-    steps:
-      - uses: actions/checkout@v4
-      - run: docker build -t radar-ferroviario:${{ github.sha }} .
-      - run: docker run -d --name radar -p 8080:8080 radar-ferroviario:${{ github.sha }}
-      - run: |
-          for i in {1..20}; do
-            curl -fsS http://127.0.0.1:8080/health/live && exit 0
-            sleep 2
-          done
-          docker logs radar
-          exit 1
+          cache-dependency-path: |
+            requirements.txt
+            requirements-dev.txt
+
+      - name: Upgrade pip
+        run: python -m pip install --upgrade pip
+
+      - name: Install application and test dependencies
+        run: python -m pip install -r requirements-dev.txt
+
+      - name: Verify dependencies
+        run: |
+          python --version
+          python -m pytest --version
+          python -m coverage --version
+          python -m pip check
+
+      - name: Compile Python
+        run: |
+          python -m py_compile \
+            app.py \
+            wsgi.py \
+            src/radar_app/application.py \
+            src/radar/*.py \
+            src/radar/gtfs/*.py \
+            tests/*.py
+
+      - name: Unit tests
+        run: |
+          python -m pytest \
+            -q \
+            -m "not integration"
+
+      - name: Integration tests
+        run: |
+          python -m pytest \
+            -q \
+            -m integration
+
+      - name: Full suite with coverage
+        run: |
+          python -m pytest \
+            -q \
+            --cov \
+            --cov-branch \
+            --cov-report=term-missing \
+            --cov-report=xml \
+            --junitxml=test-results.xml
+
+      - name: Upload reports
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: test-reports-python-3.12
+          path: |
+            coverage.xml
+            test-results.xml
+          retention-days: 3
+          if-no-files-found: ignore

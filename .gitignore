@@ -1,7 +1,166 @@
+# =============================================================================
+# Radar Ferroviario de Espana
+# Local/runtime/generated files that must not be committed
+# =============================================================================
+
+# Python bytecode and interpreter caches, at ANY depth
+__pycache__/
+**/__pycache__/
+*.py[cod]
+*$py.class
+
+# Test, type-checker, linter and tooling caches
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+**/.mypy_cache/
+.pyright/
+**/.pyright/
+.ruff_cache/
+**/.ruff_cache/
+.hypothesis/
+**/.hypothesis/
+.tox/
+.nox/
+.cache/
+
+# Coverage and test reports
+.coverage
+.coverage.*
+coverage.xml
+coverage.json
+htmlcov/
+.pytest-results/
+test-results/
+junit.xml
+
+# Virtual environments and local Python selection
+.venv/
+venv/
+env/
+ENV/
+.python-version
+
+# Environment variables, credentials and certificates
 .env
 .env.*
 !.env.example
-.pytest_cache/
-coverage.xml
-htmlcov/
+*.pem
+*.key
+*.crt
+*.p12
+*.pfx
+secrets/
+
+# Application runtime logs and process files, at ANY depth
+logs/
+**/logs/
+*.log
+*.log.*
+*.pid
+*.pid.lock
+*.sock
+
+# Downloaded and generated application caches, at ANY depth
+cache/
+**/cache/
+
+# Optional placeholders. These are tracked only if you create them explicitly.
+!cache/.gitkeep
+!logs/.gitkeep
+
+# Radar-generated persistent cache files in repository root or subdirectories
+real_tracks_cache*.json
+**/real_tracks_cache*.json
+overpass_viewport_cache*.json
+**/overpass_viewport_cache*.json
+
+# Local operator configuration can contain tokens
+operator_config.json
+**/operator_config.json
+
+# Local databases and Flask instance data
+instance/
+**/instance/
+*.sqlite
+*.sqlite3
+*.db
+
+# Build, distribution and Python packaging artifacts
+build/
+dist/
+downloads/
+*.egg-info/
+.eggs/
+*.egg
+wheels/
+pip-wheel-metadata/
+
+# Archives and generated delivery bundles
 *.zip
+*.tar
+*.tar.gz
+*.tgz
+*.7z
+*.rar
+
+# Temporary, swap and backup files
+*.tmp
+*.temp
+*.bak
+*.old
+*.orig
+*.rej
+*~
+.tmp/
+tmp/
+*.swp
+*.swo
+
+# IDE and editor metadata
+.vscode/
+.idea/
+*.code-workspace
+.project
+.pydevproject
+.settings/
+
+# Operating-system metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# Docker local overrides, bind-mount data and generated volumes
+docker-compose.override.yml
+.docker/
+docker-data/
+volumes/
+
+# Local deployment and serverless artifacts
+.vercel/
+.netlify/
+.serverless/
+.aws-sam/
+.terraform/
+*.tfstate
+*.tfstate.*
+
+# Profiling and debug artifacts
+*.prof
+*.lprof
+*.trace
+flamegraph.svg
+
+# Node tooling, if frontend tooling is added later
+node_modules/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# Do NOT add broad negation rules such as !tests/** or !src/** here.
+# Ignored directories cannot be reliably re-included without unignoring every
+# parent, and project source files are not ignored by any rule above anyway.
