@@ -48,3 +48,10 @@ python -c 'import radar; print(radar.__file__)'
 ```
 
 Debe apuntar a `src/radar/__init__.py`.
+
+## Estado GTFS `stale`
+
+`stale` indica que la renovación NAP y los fallbacks fallaron, pero la aplicación
+conservó y volvió a validar el último ZIP local. Consulta `cache_age_seconds`,
+`download_attempts`, `active_source` y `error` en el estado de la red. No borres
+la caché hasta verificar que existe una fuente remota válida.

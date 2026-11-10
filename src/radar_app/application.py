@@ -22,6 +22,9 @@ import threading
 import zipfile
 from flask import Flask, render_template, jsonify, request
 from radar.gtfs import active_service_ids, open_gtfs_archive
+from radar.nap_service import NapGtfsService, find_download_url
+from radar.redaction import sanitize_data, sanitize_text, sanitize_url
+from radar.config import METRO_GTFS as CONFIG_METRO_GTFS
 import requests
 import hashlib
 from requests.adapters import HTTPAdapter
@@ -230,6 +233,9 @@ OVERPASS_FAILURE_COOLDOWN = 180
 
 from radar.state import create_application_state
 
+# ``radar.config`` is the single authoritative source for transit catalogues.
+# The legacy literal above remains only until the composition root is fully split.
+METRO_GTFS = CONFIG_METRO_GTFS
 STATE = create_application_state(METRO_GTFS, OPEN_ACCESS_GTFS, OVERPASS_ENDPOINTS)
 APP_START_TIME = STATE.started_at
 METRO_CACHE, METRO_LOCK = STATE.metro_cache, STATE.metro_lock
@@ -252,6 +258,8 @@ OPERATOR_RETRY = Retry(total=3, connect=3, read=2, backoff_factor=1.0,
 OPERATOR_HTTP = requests.Session()
 OPERATOR_HTTP.headers.update(HEADERS)
 OPERATOR_HTTP.mount("https://", HTTPAdapter(max_retries=OPERATOR_RETRY, pool_connections=4, pool_maxsize=4))
+
+NAP_GTFS_SERVICE = NapGtfsService(OPERATOR_HTTP, logger=APP_LOGGER)
 
 from radar.overpass_service import OverpassService
 
@@ -1437,56 +1445,17 @@ def load_operator_gtfs(operator_key, force=False):
 
 
 def _find_download_url(payload):
-    """Locate the requested value within a provider-specific response.
-
-    Parameters are validated or normalized by the function; relevant inputs: ``payload``.
-    """
-    if isinstance(payload, str):
-        value = payload.strip().strip('"')
-        return value if value.startswith("http") else None
-    if isinstance(payload, dict):
-        for preferred in ("url", "downloadUrl", "downloadURL", "link", "href", "result", "data", "value"):
-            if preferred in payload:
-                found = _find_download_url(payload[preferred])
-                if found: return found
-        for value in payload.values():
-            found = _find_download_url(value)
-            if found: return found
-    if isinstance(payload, list):
-        for value in payload:
-            found = _find_download_url(value)
-            if found: return found
-    return None
+    """Compatibility wrapper around the recursive NAP URL resolver."""
+    return find_download_url(payload)
 
 
 def download_nap_gtfs(dataset_id, token, cache_file):
-    """Resolve and download one NAP GTFS dataset into its persistent ZIP cache.
-
-    Parameters are validated or normalized by the function; relevant inputs: ``dataset_id``, ``token``, ``cache_file``.
-    """
-    endpoint = f"https://nap.transportes.gob.es/api/Fichero/downloadLink/{dataset_id}"
-    try:
-        response = OPERATOR_HTTP.get(endpoint, headers={"ApiKey": token}, timeout=(10, 45), allow_redirects=True)
-        if response.status_code != 200:
-            return None, [f"{endpoint}: HTTP {response.status_code}"]
-        if response.content[:2] == b"PK":
-            Path(cache_file).write_bytes(response.content)
-            return response.content, []
-        try:
-            payload = response.json()
-        except Exception:
-            payload = response.text
-        link = _find_download_url(payload)
-        if not link:
-            preview = response.text[:200].replace("\n", " ")
-            return None, [f"{endpoint}: HTTP 200 sin URL descargable · {preview}"]
-        download = OPERATOR_HTTP.get(link, timeout=(10, 45), allow_redirects=True)
-        if download.status_code == 200 and download.content[:2] == b"PK":
-            Path(cache_file).write_bytes(download.content)
-            return download.content, []
-        return None, [f"enlace temporal: HTTP {download.status_code}"]
-    except Exception as exc:
-        return None, [f"{endpoint}: {exc}"]
+    """Compatibility wrapper returning the historical ``content, errors`` tuple."""
+    result = NAP_GTFS_SERVICE.download_nap(dataset_id, token)
+    if result.content is not None:
+        from radar.nap_service import write_bytes_atomic
+        write_bytes_atomic(cache_file, result.content)
+    return result.content, result.errors
 
 
 def parse_metro_gtfs(content, key):
@@ -1505,17 +1474,9 @@ def parse_metro_gtfs(content, key):
 
 
 def _download_direct_gtfs(url):
-    """Download raw provider bytes with bounded network behavior.
-
-    Parameters are validated or normalized by the function; relevant inputs: ``url``.
-    """
-    try:
-        response = OPERATOR_HTTP.get(url, timeout=(10, 45), allow_redirects=True)
-        if response.status_code == 200 and response.content[:2] == b"PK":
-            return response.content, None
-        return None, f"HTTP {response.status_code}"
-    except Exception as exc:
-        return None, str(exc)
+    """Compatibility wrapper around validated direct GTFS acquisition."""
+    result = NAP_GTFS_SERVICE.download_direct([url])
+    return result.content, None if result.content is not None else "; ".join(result.errors)
 
 
 def load_metro_gtfs(key, force=False, attempt_id=None):
@@ -1535,46 +1496,21 @@ def load_metro_gtfs(key, force=False, attempt_id=None):
             attempt_id = state["attempt_id"]
         state.update(loading=True, last_checked=now, status="checking", error=None, using_cache=False)
     cache_file = os.path.join(OPEN_ACCESS_CACHE_DIR, f"{key}.zip")
-    content, errors, active_source = None, [], None
+    cache_file = os.path.join(OPEN_ACCESS_CACHE_DIR, f"{key}.zip")
     token = operator_token("ouigo", OPEN_ACCESS_GTFS["ouigo"])
-
-    # 1. Fresh persistent cache avoids unnecessary network requests.
-    if os.path.exists(cache_file) and not force and now - os.path.getmtime(cache_file) < METRO_CACHE_TTL:
-        try:
-            cached = Path(cache_file).read_bytes()
-            if cached[:2] == b"PK":
-                content, active_source = cached, "cache"
-                state["using_cache"] = True
-        except Exception as exc:
-            errors.append(f"caché: {exc}")
-
-    # 2. Official NAP source, using the same ApiKey already configured for OUIGO.
-    if content is None and token:
-        content, nap_errors = download_nap_gtfs(cfg["nap_id"], token, cache_file)
-        errors.extend(nap_errors)
-        if content is not None:
-            active_source = f"NAP {cfg['nap_id']}"
-
-    # 3. Public operator fallback, especially CRTM for Metro Madrid.
-    if content is None:
-        for url in cfg.get("fallback_urls", []):
-            direct, direct_error = _download_direct_gtfs(url)
-            if direct is not None:
-                content, active_source = direct, url
-                Path(cache_file).write_bytes(content)
-                break
-            errors.append(f"fallback {url}: {direct_error}")
-
-    # 4. Stale cache remains preferable to losing a whole urban network.
-    if content is None and os.path.exists(cache_file):
-        try:
-            stale = Path(cache_file).read_bytes()
-            if stale[:2] == b"PK":
-                content, active_source = stale, "stale-cache"
-                state["using_cache"] = True
-                errors.append("usando último GTFS válido")
-        except Exception as exc:
-            errors.append(f"caché antigua: {exc}")
+    fetch = NAP_GTFS_SERVICE.acquire(
+        dataset_id=cfg["nap_id"], token=token,
+        fallback_urls=cfg.get("fallback_urls", []), cache_file=cache_file,
+        ttl=METRO_CACHE_TTL, force=force,
+    )
+    content = fetch.content
+    errors = list(fetch.errors)
+    active_source = fetch.source
+    state.update(
+        using_cache=fetch.using_cache, stale=fetch.stale,
+        cache_age_seconds=fetch.cache_age_seconds, download_attempts=fetch.attempts,
+        last_attempt_at=now,
+    )
 
     try:
         if content is None:
@@ -1585,11 +1521,11 @@ def load_metro_gtfs(key, force=False, attempt_id=None):
             raise RuntimeError("GTFS válido pero sin rutas o estaciones utilizables")
         state.update(parsed)
         state.update(loaded=True, updated_at=now, next_refresh=now+METRO_CACHE_TTL,
-                     error="; ".join(errors) if errors else None, status="cached" if state["using_cache"] else "loaded",
-                     active_source=active_source, retry_after=0.0)
+                     error="; ".join(errors) if errors else None, status="stale" if fetch.stale else ("cached" if fetch.using_cache else "loaded"),
+                     active_source=active_source, retry_after=0.0, last_success_at=now)
         print(f"[{cfg['name']}] GTFS: {len(parsed['routes'])} rutas, {len(parsed['stations'])} estaciones ({active_source})")
     except Exception as exc:
-        state.update(error=str(exc), status="error", next_refresh=now+3600, retry_after=now+3600)
+        state.update(error=str(exc), status="failed", next_refresh=now+3600, retry_after=now+3600)
         APP_LOGGER.warning("%s GTFS: %s", cfg["name"], exc)
     finally:
         with METRO_LOCK:
@@ -2390,6 +2326,36 @@ def estimate_operator_trains(operator_key, state, now=None):
     return estimates
 
 
+def _transit_source_diagnostics(key, cfg, state):
+    """Return a JSON-safe, complete download/cache snapshot for one GTFS network."""
+    now = time.time()
+    return {
+        "key": key, "name": cfg["name"], "color": cfg["color"],
+        "source": cfg["source"],
+        "source_page": sanitize_url(cfg["source_page"]) if cfg.get("source_page") else None,
+        "source_strategy": cfg.get("source_strategy", "nap"),
+        "nap_file_id": cfg.get("nap_id"),
+        "fallback_urls": [sanitize_url(url) for url in cfg.get("fallback_urls", [])],
+        "loaded": state.get("loaded", False), "loading": state.get("loading", False),
+        "status": state.get("status", "pending"),
+        "active_source": sanitize_text(state.get("active_source")) if state.get("active_source") else None,
+        "using_cache": state.get("using_cache", False),
+        "stale": state.get("stale", False),
+        "cache_age_seconds": state.get("cache_age_seconds"),
+        "download_attempts": sanitize_data(state.get("download_attempts", [])),
+        "last_attempt_at": state.get("last_attempt_at", 0),
+        "last_success_at": state.get("last_success_at", 0),
+        "updated_at": state.get("updated_at", 0),
+        "last_checked": state.get("last_checked", 0),
+        "next_refresh": state.get("next_refresh", 0),
+        "retry_in": max(0, int(state.get("retry_after", 0) - now)),
+        "error": sanitize_text(state.get("error")) if state.get("error") else None,
+        "station_count": len(state.get("stations", [])),
+        "route_count": len(state.get("routes", [])),
+        "trip_count": len(state.get("trips", [])),
+    }
+
+
 @app.route("/api/transit-networks")
 def api_transit_networks():
     """Handle the corresponding HTTP API operation and return a JSON response.
@@ -2399,13 +2365,13 @@ def api_transit_networks():
     for key,cfg in METRO_GTFS.items():
         state=METRO_CACHE[key]
         estimates=estimate_operator_trains(key,state) if state["loaded"] else []
-        networks[key]={"key":key,"name":cfg["name"],"color":cfg["color"],"source":cfg["source"],
-            "loaded":state["loaded"],"loading":state["loading"],"status":state["status"],
-            "active_source":state["active_source"],"using_cache":state["using_cache"],"error":state["error"],
-            "retry_in":max(0,int(state.get("retry_after",0)-time.time())),
-            "updated_at":state["updated_at"],"last_checked":state["last_checked"],"next_refresh":state["next_refresh"],
-            "station_count":len(state["stations"]),"route_count":len(state["routes"]),"trip_count":len(state["trips"]), "estimated_count":len(estimates),
-            "stations":state["stations"],"routes":state["routes"],"trips":state["trips"],"estimated_trains":estimates}
+        source_info = _transit_source_diagnostics(key, cfg, state)
+        source_info.update({
+            "estimated_count": len(estimates),
+            "stations": state["stations"], "routes": state["routes"],
+            "trips": state["trips"], "estimated_trains": estimates,
+        })
+        networks[key] = source_info
     # FEVE/RAM already arrives in Renfe Cercanías GTFS-RT. Expose explicit inventory/status.
     feve=[t for t in RT_CACHE.get("trains",[]) if t.get("is_feve") or re.search(r"FEVE|RAM|ANCHO.?M[EÉ]TRICO", f"{t.get('subtype','')} {t.get('route_id','')} {t.get('origin_dest','')}", re.I)]
     loaded_networks=sum(1 for x in networks.values() if x["loaded"])
@@ -2505,10 +2471,14 @@ def api_diagnostics():
             "success": True,
             "timestamp": datetime.now().isoformat(timespec="seconds"),
             "uptime": round(time.time() - APP_START_TIME),
-            "feeds": RT_CACHE.get("diagnostics", {}),
+            "feeds": sanitize_data(RT_CACHE.get("diagnostics", {})),
+            "gtfs_sources": {
+                key: _transit_source_diagnostics(key, cfg, METRO_CACHE[key])
+                for key, cfg in METRO_GTFS.items()
+            },
             "train_snapshot": {"last_success_at": RT_CACHE.get("last_success_at", 0),
                                "last_attempt_at": RT_CACHE.get("last_attempt_at", 0),
-                               "last_error": RT_CACHE.get("last_error"),
+                               "last_error": sanitize_text(RT_CACHE.get("last_error")) if RT_CACHE.get("last_error") else None,
                                "discarded_vehicles": RT_CACHE.get("discarded_vehicles", 0)},
             "counts": {
                 "trains": len(RT_CACHE.get("trains", [])),
@@ -2530,7 +2500,7 @@ def api_diagnostics():
                 "tracks_stages_completed": completed_stages,
                 "tracks_stages_failed": failed_stages
             },
-            "overpass_mirrors": OVERPASS_SERVICE.diagnostics(),
+            "overpass_mirrors": sanitize_data(OVERPASS_SERVICE.diagnostics()),
             "error_log": {"path": ERROR_LOG_FILE, "size_bytes": log_size, "retention": "3 x 2 MB"},
             "errors": list(RECENT_ERRORS)[:50]
         }

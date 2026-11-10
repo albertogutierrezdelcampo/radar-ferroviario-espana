@@ -45,3 +45,10 @@ Revisar:
 - Log creciendo de forma continua con el mismo proveedor.
 - Todos los mirrors Overpass en cooldown.
 - Disco por encima del 80 %.
+
+## Saneamiento de logs y diagnóstico
+
+Los handlers de logging y los serializers de diagnóstico usan el mismo módulo
+de redacción. No obstante, los logs históricos creados antes de la fase 6.3.3
+pueden contener URLs temporales completas; rota o elimina esos ficheros antes de
+publicarlos y no uses `/api/diagnostics/log` como endpoint público.

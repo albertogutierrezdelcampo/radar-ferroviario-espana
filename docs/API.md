@@ -112,3 +112,18 @@ Descubre recursos públicos compatibles.
 ### `GET /api/adif/layer?url=<URL>`
 
 Consulta FeatureServer, MapServer o GeoJSON. Antes de producción debe existir allowlist estricta de esquema `https`, host y rutas admitidas para reducir SSRF.
+
+### Observabilidad GTFS ampliada
+
+Cada red de `/api/transit-networks` y cada entrada de
+`/api/diagnostics.gtfs_sources` incluye `source_page`, `source_strategy`,
+`nap_file_id`, `fallback_urls`, `active_source`, `using_cache`, `stale`,
+`cache_age_seconds`, `download_attempts`, `last_attempt_at`, `last_success_at`,
+`next_refresh`, `retry_in`, `error` y contadores de tablas GTFS.
+
+### Redacción de datos sensibles
+
+Desde la fase 6.3.3, las respuestas de diagnóstico conservan host, ruta y
+parámetros no sensibles, pero sustituyen credenciales y firmas por `[REDACTED]`.
+Esto incluye URLs prefirmadas de Amazon S3, firmas de Google, SAS habituales,
+API keys, tokens, cabeceras de autorización y credenciales embebidas en URL.

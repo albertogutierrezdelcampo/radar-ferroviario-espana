@@ -1,0 +1,33 @@
+name: Tests
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  pytest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+          cache: pip
+      - run: python -m pip install --upgrade pip
+      - run: pip install -r requirements-dev.txt
+      - name: Compile Python
+        run: >-
+          python -m py_compile app.py wsgi.py src/radar_app/application.py
+          src/radar/*.py src/radar/gtfs/*.py tests/*.py
+      - name: Unit and integration tests
+        env:
+          PYTHONPATH: src
+          RADAR_LOG_FILE: /tmp/radar-pytest.log
+        run: pytest -q --cov --cov-report=term-missing --cov-report=xml
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-xml
+          path: coverage.xml
+          if-no-files-found: ignore

@@ -11,6 +11,7 @@ from logging.handlers import RotatingFileHandler
 from pathlib import Path
 
 from radar.config import BASE_DIR
+from radar.redaction import sanitize_text
 
 LOG_DIR = Path(BASE_DIR) / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
@@ -19,6 +20,15 @@ RECENT_ERRORS = deque(maxlen=200)
 LOG_FORMAT = logging.Formatter(
     "%(asctime)s | %(levelname)s | %(threadName)s | %(name)s | %(message)s"
 )
+
+
+class RedactingFilter(logging.Filter):
+    """Sanitize the final formatted message before handlers persist or expose it."""
+
+    def filter(self, record: logging.LogRecord) -> bool:
+        record.msg = sanitize_text(record.getMessage())
+        record.args = ()
+        return True
 
 
 class RecentErrorHandler(logging.Handler):
@@ -54,10 +64,12 @@ def configure_logging() -> logging.Logger:
         ERROR_LOG_FILE, maxBytes=2_000_000, backupCount=3, encoding="utf-8"
     )
     file_handler.setLevel(logging.WARNING)
+    file_handler.addFilter(RedactingFilter())
     file_handler.setFormatter(LOG_FORMAT)
 
     recent_handler = RecentErrorHandler()
     recent_handler.setLevel(logging.WARNING)
+    recent_handler.addFilter(RedactingFilter())
     recent_handler.setFormatter(LOG_FORMAT)
 
     logger.addHandler(file_handler)

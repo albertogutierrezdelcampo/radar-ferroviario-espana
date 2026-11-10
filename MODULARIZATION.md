@@ -114,3 +114,48 @@ La separación evita estado mutable creado de forma dispersa y prepara la inyecc
 ### Siguiente extracción
 
 `application.py` sigue siendo el composition root legado. A partir de esta base se migrarán por pull requests los blueprints (`health`, `diagnostics`, `operators`, `infrastructure`) y servicios, sin volver a engordar `app.py`.
+
+## Fase 6.3 aplicada
+
+- `src/radar/nap_service.py`: adquisición GTFS independiente de Flask.
+- Soporta ZIP directo, redirect, JSON anidado, texto JSON y URL temporal.
+- Valida el ZIP y las tablas GTFS antes de sustituir la caché.
+- Escritura binaria atómica mediante temporal, `fsync` y `os.replace`.
+- Política: caché fresca, NAP, fallbacks públicos y finalmente caché stale válida.
+- Una descarga inválida nunca destruye el último GTFS válido.
+- Estado por red con `stale`, edad de caché, intentos, último intento y último éxito.
+- Los wrappers históricos permanecen para conservar contratos y tests existentes.
+
+## Fase 6.3.1 aplicada
+
+- `/api/transit-networks` expone metadatos completos de adquisición, caché y fuente.
+- `/api/diagnostics` añade `gtfs_sources` con el mismo contrato resumido.
+- Metrovalencia usa el identificador de fichero NAP vigente `1168`; `967` queda sólo como página de catálogo.
+- Mallorca deja de depender del endpoint NAP `1071` y usa el GTFS oficial directo de TIB.
+- La adquisición omite NAP cuando `nap_id` es `None` y continúa con URLs oficiales directas.
+
+## Fase 6.3.2 correctiva
+
+- `radar.config.METRO_GTFS` pasa a ser la fuente autoritativa en runtime.
+- La composición Flask sobrescribe el literal legado antes de construir `METRO_CACHE`.
+- Añadida prueba de regresión para impedir que IDs antiguos vuelvan a gobernar la aplicación.
+- La eliminación física del literal duplicado se realizará al extraer completamente el servicio de redes.
+
+## Fase 6.3.3 aplicada
+
+- `src/radar/redaction.py` centraliza saneamiento de URLs, texto y estructuras JSON.
+- Se eliminan credenciales embebidas, fragmentos y valores sensibles de query (`X-Amz-*`, `X-Goog-*`, `sig`, `token`, `ApiKey`, etc.).
+- NAP guarda intentos y errores ya saneados; las URLs firmadas nunca entran completas en estado nuevo.
+- `/api/transit-networks` y `/api/diagnostics` vuelven a sanear en el límite de salida como defensa en profundidad.
+- Los handlers de fichero y memoria aplican `RedactingFilter` antes de persistir o exponer logs.
+- Se conserva host, ruta y parámetros no sensibles para que el diagnóstico siga siendo útil.
+
+## Fase 7.2: calidad y pruebas exhaustivas
+
+- Fixtures comunes para `app`, cliente Flask y restauración de caches mutables.
+- Integración HTTP en proceso para health, UI, estaciones, rutas, viewport, redes, operadores, alertas, ADIF y diagnóstico.
+- Pruebas administrativas para refresh, configuración OUIGO y limpieza/descarga de log.
+- Pruebas de contratos, 404, readiness reciente/caducado y redacción en el límite HTTP.
+- Marcador `integration` registrado en pytest.
+- `.coveragerc`, `requirements-dev.txt` y workflow GitHub Actions con Python 3.12.
+- Todas las pruebas impiden red real y escriben logs de test fuera del repositorio.

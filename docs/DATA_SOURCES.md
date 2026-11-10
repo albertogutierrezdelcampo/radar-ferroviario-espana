@@ -37,3 +37,22 @@ El catálogo y capas pueden variar en esquema, paginación y límites. No todas 
 ## Datos derivados
 
 Velocidad, bearing, posición ajustada a vía, trenes estimados y posibles horarios inferidos son cálculos de la aplicación. Deben etiquetarse como estimados y nunca confundirse con telemetría certificada.
+
+## Política NAP desde la fase 6.3
+
+La adquisición acepta cuatro respuestas válidas: ZIP GTFS directo, redirección HTTP,
+JSON con URL temporal y texto que contiene JSON o una URL. Antes de guardar se
+validan la firma ZIP y las tablas `stops`, `routes`, `trips` y `stop_times`.
+
+Orden de resolución: caché fresca, NAP autenticado, fallbacks públicos y caché
+caducada validada. Si NAP responde `Archivo no encontrado`, Metrovalencia o
+Mallorca pueden continuar como `stale` cuando existe un ZIP local anterior.
+
+## Actualización de fuentes de Metrovalencia y Mallorca (fase 6.3.1)
+
+- Metrovalencia conserva la página de catálogo NAP `Detail/967`, pero la descarga
+  autenticada usa el identificador de fichero vigente `1168`.
+- Mallorca utiliza como estrategia primaria directa el ZIP oficial publicado por
+  TIB, sin depender del antiguo `downloadLink/1071`.
+- Los endpoints muestran `source_page`, `source_strategy`, `nap_file_id`,
+  `fallback_urls`, intentos, edad y estado stale para facilitar auditoría.

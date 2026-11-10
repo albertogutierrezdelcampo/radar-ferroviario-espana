@@ -16,7 +16,7 @@ HEADERS = {
 CKAN_BASE = "https://data.renfe.com/api/3/action/package_show?id="
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+BASE_DIR = str(Path(__file__).resolve().parents[2])
 
 
 TRACKS_CACHE_FILE = os.path.join(BASE_DIR, "real_tracks_cache_v6.json")
@@ -91,8 +91,11 @@ METRO_GTFS = {
         "source":"Metro Bilbao / NAP-MITRAMS", "fallback_urls":[]
     },
     "metro_valencia": {
-        "name":"Metrovalencia", "short":"FGV", "color":"#E30613", "nap_id":967,
-        "source":"FGV / NAP-MITRAMS", "fallback_urls":[]
+        "name":"Metrovalencia", "short":"FGV", "color":"#E30613", "nap_id":1168,
+        "source":"FGV / NAP-MITRAMS",
+        "source_page":"https://nap.transportes.gob.es/ConjuntoDato/Detail/967",
+        "source_strategy":"nap_file_id",
+        "fallback_urls":["http://www.metrovalencia.es/google_transit_feed/google_transit.zip"]
     },
     "metro_malaga": {
         "name":"Metro Málaga", "short":"MM", "color":"#00A651", "nap_id":1497,
@@ -100,8 +103,13 @@ METRO_GTFS = {
         "fallback_urls":["https://metromalaga.es/GTFS/GTFS_METRO_MALAGA.zip"]
     },
     "mallorca_rail": {
-        "name":"Metro y tren de Mallorca", "short":"SFM", "color":"#0072BC", "nap_id":1071,
-        "source":"SFM-TIB / NAP-MITRAMS", "fallback_urls":[]
+        "name":"Metro y tren de Mallorca", "short":"SFM", "color":"#0072BC", "nap_id":None,
+        "source":"SFM-TIB / TIB Dades Obertes",
+        "source_page":"https://www.tib.org/es/sobre-ctm/portal-de-transparencia/datos-abiertos",
+        "source_strategy":"official_direct",
+        "fallback_urls":[
+            "https://www.tib.org/documents/30683/96569/ctm-mallorca-es.zip/3d94d08e-b214-62d2-7b8c-ef3bebb9a8c0"
+        ]
     },
     "euskotren": {
         "name":"Euskotren", "short":"EUS", "color":"#00A651", "nap_id":1263,

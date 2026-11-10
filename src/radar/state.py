@@ -20,8 +20,9 @@ def _metro_state(config: dict[str, dict[str, Any]]) -> dict[str, dict[str, Any]]
         key: {
             "loaded": False, "loading": False, "updated_at": 0,
             "last_checked": 0, "next_refresh": 0, "error": None,
-            "status": "pending", "active_source": None, "using_cache": False,
-            "retry_after": 0.0, "attempt_id": 0, "stations": [], "routes": [],
+            "status": "pending", "active_source": None, "using_cache": False, "stale": False,
+            "cache_age_seconds": None, "download_attempts": [], "last_attempt_at": 0,
+            "last_success_at": 0, "retry_after": 0.0, "attempt_id": 0, "stations": [], "routes": [],
             "trips": [], "name": cfg["name"], "color": cfg["color"],
             "source": cfg["source"],
         }

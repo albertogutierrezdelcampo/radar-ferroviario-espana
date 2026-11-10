@@ -28,6 +28,7 @@ Aplicación web para visualizar sobre un mapa la circulación ferroviaria dispon
 - Clasificación de AVE, Larga Distancia, Media Distancia, Cercanías y servicios de ancho métrico.
 - Integración de operadores de acceso abierto como iryo y OUIGO mediante GTFS estático.
 - Redes urbanas y regionales, entre ellas Metro de Madrid, TMB, Metro Bilbao, Metro Málaga, Euskotren y redes ferroviarias andaluzas.
+- Adquisición NAP endurecida: ZIP directo, URL temporal, fallbacks públicos y conservación de caché stale validada.
 - Estaciones, rutas, horarios, próximas paradas y estimaciones derivadas de GTFS.
 - Geometrías ferroviarias de OpenStreetMap mediante varias instancias Overpass.
 - Alertas GTFS-RT e información pública de infraestructura de ADIF cuando las fuentes responden.

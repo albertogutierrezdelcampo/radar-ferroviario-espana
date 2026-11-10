@@ -40,3 +40,35 @@ pytest -q tests/test_overpass_service.py
 - Redirigir `RADAR_LOG_FILE` a `/tmp`.
 - Los errores deliberados de mocks no deben confundirse con fallos del producto.
 - Toda corrección de bug debe añadir una prueba de regresión que falle antes del fix.
+
+## Suite exhaustiva desde la fase de calidad 7.2
+
+Instala herramientas de desarrollo:
+
+```bash
+pip install -r requirements-dev.txt
+```
+
+Ejecuta todo:
+
+```bash
+PYTHONPATH=src RADAR_LOG_FILE=/tmp/radar-pytest.log pytest -q
+```
+
+Sólo integración HTTP sin red externa:
+
+```bash
+PYTHONPATH=src RADAR_LOG_FILE=/tmp/radar-pytest.log pytest -q -m integration
+```
+
+Cobertura con branches:
+
+```bash
+PYTHONPATH=src RADAR_LOG_FILE=/tmp/radar-pytest.log \
+pytest -q --cov --cov-report=term-missing --cov-report=html --cov-report=xml
+```
+
+La suite de integración usa el `test_client` real de Flask, pero bloquea el
+arranque de threads y sustituye I/O externo con dobles. Cubre contratos, códigos
+HTTP, cabeceras de caché, aislamiento de estado, saneamiento de credenciales,
+planificación de refresh y endpoints administrativos.
