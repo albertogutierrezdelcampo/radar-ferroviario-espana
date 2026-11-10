@@ -1,0 +1,141 @@
+name: Publish production image to ECR
+
+on:
+  push:
+    tags:
+      - "v*.*.*"
+
+permissions:
+  contents: read
+ *id-token: write
+
+concurrency:
+  gr*up: publish-ecr-${{ github.ref }}
+* cancel-in-progress: false
+
+jobs:
+* publish:
+    name: Build, verify *nd publish
+    runs-on: ubuntu-lat*st
+    timeout-minutes: 30
+
+    st*ps:
+      - name: Checkout tagged *ommit
+        uses: actions/checko*t@v4
+
+      - name: Validate produ*tion tag
+        shell: bash
+     *  run: |
+          set -euo pipefa*l
+          [[ "$GITHUB_REF_TYPE" == "tag" ]]
+          [[ "$GITHUB_REF_NAME" =~ ^v[0-9]+\.[0-9]+\.[0-9]+$ ]]
+          echo "Publishing im*utable tag $GITHUB_REF_NAME"
+
+    * - name: Configure AWS credentials*through OIDC
+        uses: aws-act*ons/configure-aws-credentials@v5
+ *      with:
+          role-to-assu*e: ${{ vars.AWS_ROLE_ARN }}
+      *   aws-region: ${{ vars.AWS_REGION*}}
+          role-session-name: ra*ar-ecr-${{ github.run_id }}
+
+     *- name: Confirm AWS identity
+     *  run: aws sts get-caller-identity*
+      - name: Login to Amazon ECR*        id: ecr
+        uses: aws-*ctions/amazon-ecr-login@v2
+
+      * name: Set up Docker Buildx
+      * uses: docker/setup-buildx-action@*3
+
+      - name: Build production *mage
+        uses: docker/build-pu*h-action@v6
+        with:
+        * context: .
+          file: ./Dock*rfile
+          platforms: linux/a*d64
+          load: true
+         *push: false
+          tags: radar-*erroviario:release
+          cache*from: type=gha
+          cache-to:*type=gha,mode=max
+
+      - name: V*rify application files
+        run* |
+          docker run --rm \
+   *        --entrypoint /bin/sh \
+   *        radar-ferroviario:release *
+            -c '
+              se* -eu
+              test -f /app/ap*.py
+              test -f /app/wsg*.py
+              test -f /app/src*radar_app/application.py
+         *    test -d /app/static
+          *   test -d /app/templates
+        *     echo "Production image contents verified"
+            '
+
+      - name: Start release candidate
+        run: |
+          docker run -d \
+            --name radar-release \
+            -p 8080:8080 \
+            radar-ferroviario:release
+
+      - name: Validate health endpoint
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          for attempt in $(seq 1 36); do
+            echo "Health-check attempt ${attempt}/36"
+
+            if ! docker inspect radar-release \
+              --format='{{.State.Running}}' | grep -qx true; then
+              echo "Container stopped before becoming healthy"
+              docker ps -a
+              docker logs radar-release
+              exit 1
+            fi
+
+            if curl --fail --silent \
+              http://127.0.0.1:8080/health/live \
+              > /tmp/health.json; then
+              cat /tmp/health.json
+              echo
+              echo "Release candidate is healthy"
+              exit 0
+            fi
+
+            sleep 5
+          done
+
+          echo "Health endpoint timeout"
+          docker ps -a
+          docker logs radar-release
+          exit 1
+
+      - name: Tag and publish immutable image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+          RELEASE_TAG: ${{ github.ref_name }}
+        run: |
+          set -euo pipefail
+
+          REMOTE_IMAGE="${ECR_REGISTRY}/${ECR_REPOSITORY}:${RELEASE_TAG}"
+
+          docker tag radar-ferroviario:release "$REMOTE_IMAGE"
+          docker push "$REMOTE_IMAGE"
+
+          {
+            echo "## Published image"
+            echo
+            echo "\`$REMOTE_IMAGE\`"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Show container logs
+        if: always()
+        run: docker logs radar-release || true
+
+      - name: Remove release candidate
+        if: always()
+        run: docker rm -f radar-release || true
