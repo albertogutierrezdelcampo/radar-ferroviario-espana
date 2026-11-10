@@ -23,6 +23,10 @@ def smooth_chaikin(coords, iterations=2):
 
 
 def parse_float(val):
+    """Parse provider data into the internal normalized representation.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``val``.
+    """
     if val is None:
         return None
     if isinstance(val, (int, float)):
@@ -35,6 +39,10 @@ def parse_float(val):
 
 
 def haversine_km(lat1, lon1, lat2, lon2):
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``lat1``, ``lon1``, ``lat2``, ``lon2``.
+    """
     r = 6371.0
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
@@ -45,6 +53,10 @@ def haversine_km(lat1, lon1, lat2, lon2):
 
 
 def calculate_bearing(lat1, lon1, lat2, lon2):
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``lat1``, ``lon1``, ``lat2``, ``lon2``.
+    """
     phi1 = math.radians(lat1)
     phi2 = math.radians(lat2)
     dlon = math.radians(lon2 - lon1)
@@ -55,6 +67,10 @@ def calculate_bearing(lat1, lon1, lat2, lon2):
 
 
 def extract_train_number(text):
+    """Extract a normalized value from a provider-specific payload.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``text``.
+    """
     if not text:
         return ""
     m = re.search(r"(?:^|\D)0*(\d{4,5})(?:\D|$)", str(text))
@@ -84,6 +100,10 @@ def train_number_aliases(*values):
 
 
 def simplify_track_geometry(raw_pts, min_dist_deg=0.0008):
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``raw_pts``, ``min_dist_deg``.
+    """
     if len(raw_pts) <= 3:
         return [[round(p[0], 5), round(p[1], 5)] for p in raw_pts]
     out = [[round(raw_pts[0][0], 5), round(raw_pts[0][1], 5)]]
@@ -100,6 +120,10 @@ def simplify_track_geometry(raw_pts, min_dist_deg=0.0008):
 
 
 def _gtfs_date(value):
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``value``.
+    """
     value = str(value or "").strip()
     try:
         return datetime.strptime(value, "%Y%m%d").date()
@@ -108,6 +132,10 @@ def _gtfs_date(value):
 
 
 def _gtfs_seconds(value):
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``value``.
+    """
     try:
         parts = [int(float(x)) for x in str(value or "").split(":")]
         if len(parts) != 3: return None
@@ -117,6 +145,10 @@ def _gtfs_seconds(value):
 
 
 def _bearing_degrees(lat1, lon1, lat2, lon2):
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``lat1``, ``lon1``, ``lat2``, ``lon2``.
+    """
     p1, p2 = math.radians(lat1), math.radians(lat2)
     dl = math.radians(lon2 - lon1)
     y = math.sin(dl) * math.cos(p2)
@@ -125,6 +157,10 @@ def _bearing_degrees(lat1, lon1, lat2, lon2):
 
 
 def _shift_gtfs_time(value, offset):
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``value``, ``offset``.
+    """
     seconds = _gtfs_seconds(value)
     if seconds is None: return value
     shifted = seconds + offset

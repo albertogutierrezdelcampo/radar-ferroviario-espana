@@ -5,6 +5,7 @@ Runtime state and secrets deliberately remain outside this module.
 from __future__ import annotations
 
 import os
+from pathlib import Path
 
 HEADERS = {
     "User-Agent": "Mozilla/5.0 (X11; Linux x86_64) RenfeAdifTracker/6.0",
@@ -15,7 +16,7 @@ HEADERS = {
 CKAN_BASE = "https://data.renfe.com/api/3/action/package_show?id="
 
 
-BASE_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+BASE_DIR = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 TRACKS_CACHE_FILE = os.path.join(BASE_DIR, "real_tracks_cache_v6.json")

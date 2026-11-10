@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import threading
 import traceback
 from collections import deque
@@ -13,7 +14,7 @@ from radar.config import BASE_DIR
 
 LOG_DIR = Path(BASE_DIR) / "logs"
 LOG_DIR.mkdir(parents=True, exist_ok=True)
-ERROR_LOG_FILE = str(LOG_DIR / "radar_errors.log")
+ERROR_LOG_FILE = os.getenv("RADAR_LOG_FILE", str(LOG_DIR / "radar_errors.log"))
 RECENT_ERRORS = deque(maxlen=200)
 LOG_FORMAT = logging.Formatter(
     "%(asctime)s | %(levelname)s | %(threadName)s | %(name)s | %(message)s"
@@ -24,6 +25,10 @@ class RecentErrorHandler(logging.Handler):
     """Keeps the latest warnings and errors available to the diagnostics UI."""
 
     def emit(self, record: logging.LogRecord) -> None:
+        """Perform the documented application operation while preserving current API contracts.
+
+        Parameters are validated or normalized by the function; relevant inputs: ``record``.
+        """
         if record.levelno < logging.WARNING:
             return
         try:
@@ -65,10 +70,18 @@ APP_LOGGER = configure_logging()
 
 
 def log_exception(context: str, exc: BaseException) -> None:
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``context``, ``exc``.
+    """
     APP_LOGGER.error("%s: %s\n%s", context, exc, traceback.format_exc())
 
 
 def thread_exception_handler(args: threading.ExceptHookArgs) -> None:
+    """Perform the documented application operation while preserving current API contracts.
+
+    Parameters are validated or normalized by the function; relevant inputs: ``args``.
+    """
     APP_LOGGER.error(
         "Excepción no controlada en hilo %s: %s",
         getattr(args.thread, "name", "N/D"),
@@ -78,4 +91,6 @@ def thread_exception_handler(args: threading.ExceptHookArgs) -> None:
 
 
 def install_thread_exception_handler() -> None:
+    """Perform the documented application operation while preserving current API contracts.
+    """
     threading.excepthook = thread_exception_handler

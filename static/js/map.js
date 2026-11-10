@@ -1,3 +1,11 @@
+/**
+ * Radar Ferroviario browser controller.
+ *
+ * Responsibilities: initialize Leaflet, poll JSON endpoints, maintain filters,
+ * render provider diagnostics and preserve a usable map during partial outages.
+ * Security: every provider-controlled string inserted as HTML must pass through
+ * escapeHtml(). Keep network timing bounded and avoid overlapping poll cycles.
+ */
 const map = L.map('map', { preferCanvas: true }).setView([40.35, -3.70], 6);
 
         // Base geográfica oscura y discreta: conserva costa, límites y núcleos urbanos,

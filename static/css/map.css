@@ -1,3 +1,8 @@
+/*
+ * Radar Ferroviario presentation layer.
+ * Component sections follow the DOM ordering in templates/map.html. Responsive
+ * rules must preserve map usability, keyboard-visible controls and diagnostics.
+ */
 body {
             background-color: #f4f6f9;
             overflow-x: hidden;

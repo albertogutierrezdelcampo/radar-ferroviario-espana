@@ -2,6 +2,11 @@
 
 <html lang="es">
 <head>
+<!--
+  Radar Ferroviario de España: shell document.
+  Presentation lives in /static/css/map.css and interaction in /static/js/map.js.
+  Keep provider data out of this template; it is loaded through JSON endpoints.
+-->
 <meta charset="utf-8"/>
 <meta content="width=device-width, initial-scale=1.0" name="viewport"/>
 <title>Renfe &amp; ADIF Live Monitor - Trazado Físico Real, Velocidad GPS e Incidencias</title>
@@ -302,6 +307,8 @@
 </style>
 </head>
 <body>
+<!-- Application shell: keyboard-visible controls must remain real buttons/inputs. -->
+<!-- Primary status bar: application identity, freshness indicators and diagnostics. -->
 <nav class="navbar navbar-dark bg-danger shadow-sm py-2">
 <div class="container-fluid px-3">
 <div class="d-flex align-items-center gap-2">
@@ -322,7 +329,10 @@
 </div>
 </nav>
 <div class="container-fluid px-3 pt-2">
-<!-- Panel desplegable de Diagnóstico de Feeds en Tiempo Real -->
+<!--
+  Diagnostics drawer. Values originate from /api/diagnostics and must be escaped
+  before insertion. This panel is operational, not a guarantee of data accuracy.
+-->
 <div class="collapse mb-2" id="diagCollapse">
 <div class="diag-panel">
 <div class="diag-toolbar"><strong>Estado del sistema</strong><div><button class="btn btn-sm btn-outline-info" onclick="loadDiagnostics()">↻ Actualizar</button> <a class="btn btn-sm btn-outline-light" href="/api/diagnostics/log">Descargar registro</a> <button class="btn btn-sm btn-outline-danger" onclick="clearDiagnosticErrors()">Limpiar errores</button></div></div>
@@ -338,7 +348,10 @@
 <div class="diag-errors" id="diag-errors"><div class="text-secondary">Sin datos todavía.</div></div>
 </div>
 </div>
-<!-- Contenedor Principal: Mapa + Panel Lateral de Incidencias (plegable) -->
+<!--
+  Main workspace. Leaflet owns the map subtree; the incident sidebar is updated
+  incrementally so map interaction continues when one external feed fails.
+-->
 <div class="row g-2">
 <div class="col-lg-12" id="map-col">
 <div class="card shadow-sm border-0 map-card">

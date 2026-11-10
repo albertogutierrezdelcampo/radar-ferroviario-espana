@@ -10,6 +10,8 @@ from radar.config import HEADERS
 
 def build_http_session(*, total: int, connect: int, read: int, backoff: float,
                        methods: tuple[str, ...], pool_size: int) -> requests.Session:
+    """Build the derived structure used by API responses or internal indexes.
+    """
     retry = Retry(
         total=total,
         connect=connect,
@@ -33,8 +35,14 @@ DEFAULT_HTTP = build_http_session(
     total=2, connect=2, read=1, backoff=0.5, methods=("GET",), pool_size=8
 )
 OVERPASS_HTTP = build_http_session(
-    total=2, connect=2, read=1, backoff=0.8, methods=("POST",), pool_size=8
+    total=0, connect=0, read=0, backoff=0.0, methods=("POST",), pool_size=8
 )
+OVERPASS_HTTP.headers.clear()
+OVERPASS_HTTP.headers.update({
+    "User-Agent": "RadarFerroviarioEspana/1.0 (+Overpass client)",
+    "Accept": "application/json",
+    "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8",
+})
 OPERATOR_HTTP = build_http_session(
     total=3, connect=3, read=2, backoff=1.0, methods=("GET",), pool_size=4
 )
